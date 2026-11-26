@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Point d'entrée unique du playground (macOS + Arch Linux).
+#   ./play setup              installe les outils manquants et prépare l'env
+#   ./play flows              liste les flows
+#   ./play flow <nom> [args]  lance flows/<nom>.sh (stdin transmis)
+#   ./play <cmd...>           lance une commande dans l'env (ex : ./play llm models)
+set -euo pipefail
+cd "$(dirname "$0")"
+export PATH="$PWD/bin:$HOME/.local/bin:$PATH"
+
+pkg_install() {
+  if command -v brew >/dev/null; then brew install "$@"
+  elif command -v pacman >/dev/null; then sudo pacman -S --needed --noconfirm "$@"
+  else echo "Installe à la main : $*" >&2; return 1
+  fi
+}
+
+setup() {
+  command -v uv >/dev/null || curl -LsSf https://astral.sh/uv/install.sh | sh
+  command -v jq >/dev/null || pkg_install jq
+  command -v ollama >/dev/null || pkg_install ollama
+  [ -f .env ] || cp .env.example .env
+  uv sync --quiet
+  # Crée la base de logs une fois, sinon deux llm dans un pipe se la disputent.
+  run python -c 'import sqlite_utils; from llm.cli import logs_db_path; from llm.migrations import migrate; logs_db_path().parent.mkdir(exist_ok=True); migrate(sqlite_utils.Database(logs_db_path()))'
+  if curl -fsS http://localhost:11434 >/dev/null 2>&1; then
+    run sh -c 'ollama pull "${LOCAL_MODEL:-llama3.2}"'
+  else
+    echo "Ollama ne tourne pas. Lance 'ollama serve' (ou le service), puis relance ./play setup." >&2
+  fi
+  echo "OK. Renseigne ANTHROPIC_API_KEY dans .env, puis : echo 'question' | ./play flow decide"
+}
+
+run() { uv run --quiet --env-file .env "$@"; }
+
+case "${1:-}" in
+  setup) setup ;;
+  flows) ls flows | sed 's/\.sh$//' ;;
+  flow)  shift; name=${1:?nom du flow manquant}; shift; run "flows/$name.sh" "$@" ;;
+  "")    sed -n '2,6p' "$0" ;;
+  *)     run "$@" ;;
+esac
