@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Étape Jeff (jeffhub.ai) : lit stdin, appelle POST /v1/decide, renvoie la décision sur stdout.
+# Sans JEFF_API_KEY, renvoie une décision factice pour que les chaînes tournent quand même.
+# Doc : https://jeffhub.ai/docs/guides/quickstart
+set -euo pipefail
+input=$(cat)
+
+if [ -z "${JEFF_API_KEY:-}" ]; then
+  printf 'DÉCISION (mock jeff) : option 1 retenue.\n\nContexte reçu :\n%s\n' "$input"
+  exit 0
+fi
+
+: "${JEFF_FUNCTION:?JEFF_FUNCTION manquant (ex : jeff.safety.guard.attempt)}"
+
+decision=$(jq -n --arg f "$JEFF_FUNCTION" --arg input "$input" '{calls: [{function: $f, input: $input}]}' \
+  | curl -fsS "${JEFF_URL:-https://api.jeffhub.ai}/v1/decide" \
+      -H "Authorization: Bearer $JEFF_API_KEY" \
+      -H "Content-Type: application/json" \
+      --data @- \
+  | jq -c '.decisions[0] | {value, confidence, abstained}')
+
+printf 'DÉCISION (%s) : %s\n\nContexte reçu :\n%s\n' "$JEFF_FUNCTION" "$decision" "$input"
