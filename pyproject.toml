@@ -1,0 +1,13 @@
+[project]
+name = "ai-frame"
+version = "0.1.0"
+description = "Playground pour chaîner des LLM avec llm et des pipes shell"
+requires-python = ">=3.10"
+dependencies = [
+    "llm",
+    "llm-anthropic",
+    "llm-ollama",
+]
+
+[tool.uv]
+package = false
